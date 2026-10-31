@@ -1286,6 +1286,10 @@ async def I(
     )
 
 
+from tools.shared_chat import register as _register_shared_chat_tools
+_register_shared_chat_tools(mcp)
+
+
 # Pydantic 默认的 ``extra=ignore`` 会让拼错的 MCP 参数看似调用成功；
 # 写工具甚至会在未应用客户端目标字段时仍创建记忆。breath 和 trace
 # 已有严格适配层，其余公开工具使用相同边界，并同步 FastMCP

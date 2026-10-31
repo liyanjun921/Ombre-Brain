@@ -88,3 +88,5 @@ tmp_hnf1_pas_pair_smoke_*/
 coverage.xml
 .coverage
 htmlcov/
+# 跨端原话仅存在持久数据目录，禁止作为源码提交。
+_shared_chat/

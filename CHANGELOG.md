@@ -2,6 +2,14 @@
 
 本项目版本号见根目录 `VERSION` 文件，Docker 镜像 tag 与之对应（`p0luz/ombre-brain:<VERSION>`）。
 
+## 3.7.0 · 跨端对话桥 B（二改开发版）
+
+- 可选的共享对话档案：独立保存已接入原话，按平台、窗口、时间和原句查询；重试去重，冲突整批回滚。
+- 新增 `chat_append`、`chat_search`、`chat_read`、`chat_status`，通过原有鉴权 MCP 连接供 GPT 与其他客户端使用。
+- 新增独立 Bearer HTTP 接口供 Cyberboss 自动检索和补传；上下文明确分开长期记忆与聊天原话。
+- 保留原版记忆桶、遗忘曲线和 `_sources` 边界。默认关闭，需从本分支源码构建；不宣称已有同版本上游 Docker 镜像。
+- 安装和已知边界见 `docs/SHARED_CHAT.md`。目标 Windows、云端镜像和 GPT 插件需另行实测。
+
 ## 3.6.14
 
 > 三条上游反馈。没有新功能——内存那条加的是读数，不是能力。

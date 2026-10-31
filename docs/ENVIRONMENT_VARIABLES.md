@@ -44,6 +44,13 @@
 - `OMBRE_DASHBOARD_SESSION_DAYS`：Dashboard 登录会话天数。
 - `OMBRE_TRUSTED_PROXY_CIDRS`：直接连接 OB 的最后一跳可信反向代理 CIDR；不是公网客户端 IP 或域名，禁止使用 `0.0.0.0/0`。官方 Compose 模板会从 `.env` 透传该值，修改后需要重新创建容器。
 
+## 跨端对话桥（可选）
+
+- `OMBRE_SHARED_CHAT_ENABLED`：设为 `true` 才注册对话 MCP 工具并开放桥接 HTTP API，默认关闭。
+- `OMBRE_SHARED_CHAT_TOKEN`：对话桥 HTTP API 的独立 Bearer 密钥，至少 32 个字符；不复用 Dashboard Cookie，不接受 URL 密钥。
+- `OMBRE_SHARED_CHAT_SCOPE`：本实例的固定共享范围，默认 `companion`；调用方不能切换范围。
+- 对话库路径固定为 `<数据根目录>/_shared_chat/archive.sqlite3`，必须随数据根目录持久化；这是独立的原话档案，不替代 Markdown 记忆桶，也不修改原版不可回读的 `_sources` 证据层。
+
 ## Tunnel、Hook 与 GitHub
 
 - `OMBRE_GITHUB_TOKEN`：GitHub 备份或更新访问令牌。
