@@ -16,6 +16,74 @@ setup = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(setup)
 
 
+@pytest.mark.parametrize("encoding", ["utf-8", "gbk"])
+def test_windows_acl_uses_numeric_sid_even_with_chinese_names(tmp_path, monkeypatch, encoding):
+    calls = []
+    sid = "S-1-5-21-100000001-200000002-300000003-1001"
+
+    def whoami(args, **kwargs):
+        assert args == ["whoami.exe", "/user", "/fo", "csv", "/nh"]
+        assert "text" not in kwargs
+        return f'"中文电脑\\用户","{sid}"\r\n'.encode(encoding)
+
+    monkeypatch.setattr(setup.subprocess, "check_output", whoami)
+    monkeypatch.setattr(setup.subprocess, "run", lambda args, **_: calls.append(args))
+    setup.secure_windows_directory(tmp_path)
+    assert calls == [
+        ["icacls.exe", str(tmp_path), "/grant:r", f"*{sid}:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F"],
+        ["icacls.exe", str(tmp_path), "/inheritance:r"],
+    ]
+
+
+def test_windows_acl_failure_never_removes_inheritance(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(setup.subprocess, "check_output", lambda *_, **__: b'"user","S-1-5-21-1-2-3-1001"')
+
+    def deny(args, **_):
+        calls.append(args)
+        raise subprocess.CalledProcessError(5, args)
+
+    monkeypatch.setattr(setup.subprocess, "run", deny)
+    with pytest.raises(subprocess.CalledProcessError):
+        setup.secure_windows_directory(tmp_path)
+    assert len(calls) == 1 and "/grant:r" in calls[0]
+
+
+def test_windows_acl_missing_sid_does_not_touch_permissions(tmp_path, monkeypatch):
+    monkeypatch.setattr(setup.subprocess, "check_output", lambda *_, **__: b'"unknown","not-a-sid"')
+    monkeypatch.setattr(setup.subprocess, "run", lambda *_, **__: pytest.fail("不应修改权限"))
+    with pytest.raises(RuntimeError, match="账户编号"):
+        setup.secure_windows_directory(tmp_path)
+
+
+def test_small_repair_backs_up_and_rejects_unknown_or_corrupt_payload(tmp_path):
+    repair_spec = importlib.util.spec_from_file_location(
+        "repair_windows", Path(__file__).resolve().parents[1] / "deploy/repair_windows.py")
+    repair = importlib.util.module_from_spec(repair_spec)
+    repair_spec.loader.exec_module(repair)
+    target = tmp_path / "中文文件夹" / "windows_shared.py"
+    target.parent.mkdir()
+    original = b"original installer"
+    fixed = b"fixed installer"
+    target.write_bytes(original)
+    payload = tmp_path / "fixed.py"
+    payload.write_bytes(fixed)
+    manifest = {"accepted_sha256": [hashlib.sha256(original).hexdigest()],
+                "replacement_sha256": hashlib.sha256(fixed).hexdigest()}
+    assert repair.repair(target, payload, manifest)
+    assert target.read_bytes() == fixed
+    assert next(target.parent.glob("*.before-sidfix-*")).read_bytes() == original
+    assert repair.repair(target, payload, manifest) is False
+    target.write_bytes(b"custom changed installer")
+    with pytest.raises(ValueError, match="已知"):
+        repair.repair(target, payload, manifest)
+    assert target.read_bytes() == b"custom changed installer"
+    payload.write_bytes(b"corrupt payload")
+    with pytest.raises(ValueError, match="校验失败"):
+        repair.repair(target, payload, manifest)
+    assert target.read_bytes() == b"custom changed installer"
+
+
 def test_credentials_config_and_parent_environment_are_isolated(tmp_path, monkeypatch):
     root = tmp_path / "local"
     first = setup.initialize(root)

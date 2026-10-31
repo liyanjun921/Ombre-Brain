@@ -12,6 +12,23 @@ def git(repo: Path, *args: str) -> bytes:
     return subprocess.check_output(["git", "-C", str(repo), *args])
 
 
+def build_repair(ob: Path, output: Path) -> None:
+    replacement = git(ob, "show", ":deploy/windows_shared.py")
+    manifest = {
+        "accepted_sha256": ["ac75a94095d5937cb4257a5b2b6d8e333f034dc47e1b2c41f9ac75c6d3f1bef2"],
+        "replacement_sha256": hashlib.sha256(replacement).hexdigest(),
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as zipped:
+        prefix = "OB-Windows-SID-Fix/"
+        zipped.writestr(prefix + "Repair.cmd", git(ob, "show", ":deploy/Repair.cmd").replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
+        zipped.writestr(prefix + "repair_windows.py", git(ob, "show", ":deploy/repair_windows.py"))
+        zipped.writestr(prefix + "windows_shared.fixed.py", replacement)
+        zipped.writestr(prefix + "repair-manifest.json", json.dumps(manifest, indent=2))
+        zipped.writestr(prefix + "START-HERE.txt", "完整解压后双击 Repair.cmd，选择上次解压的 OB 安装包文件夹。\n只修复安装助手，不重装 Python，不删除数据，不修改微信。\n菜单打开后先选 1 安装依赖，再选 2 启动记忆库。\n".encode("utf-8-sig"))
+    print(f"已构建小修复包 {output.name}。")
+
+
 def build(ob: Path, cyber: Path, output: Path) -> None:
     base = "373ab17d283f1e3b304a6a36e17e9e8d44f1acfc"
     paths = git(cyber, "diff", "--cached", "--name-only", base, "--", "src").decode().splitlines()
@@ -48,5 +65,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--cyberboss", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--repair-output", type=Path)
     args = parser.parse_args()
-    build(Path(__file__).resolve().parents[1], args.cyberboss, args.output)
+    repository = Path(__file__).resolve().parents[1]
+    build(repository, args.cyberboss, args.output)
+    if args.repair_output:
+        build_repair(repository, args.repair_output)

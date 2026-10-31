@@ -40,14 +40,26 @@ def write_new(path: Path, content: str) -> None:
         output.write(content)
 
 
+def secure_windows_directory(root: Path) -> None:
+    # 只解析输出里的 ASCII SID，不解码可能含中文的账户名或计算机名。
+    output = subprocess.check_output(["whoami.exe", "/user", "/fo", "csv", "/nh"], timeout=10)
+    matches = re.findall(rb'\bS-1-(?:[0-9]+-)+[0-9]+\b', output)
+    if len(matches) != 1:
+        raise RuntimeError("未能读取 Windows 当前账户编号，未修改目录权限。")
+    sid = matches[0].decode("ascii")
+    # 先恢复当前账户的显式权限，再移除继承权限；可修复旧版初始化中断的目录。
+    subprocess.run(["icacls.exe", str(root), "/grant:r",
+                    f"*{sid}:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F"],
+                   check=True, stdout=subprocess.DEVNULL, timeout=10)
+    subprocess.run(["icacls.exe", str(root), "/inheritance:r"],
+                   check=True, stdout=subprocess.DEVNULL, timeout=10)
+
+
 def initialize(root: Path) -> dict:
     root.mkdir(parents=True, exist_ok=True)
-    # 数据目录属于当前用户；不修改已有目录的继承权限。
-    if os.name == "nt" and not (root / "secrets.json").exists():
-        identity = subprocess.check_output(["whoami"], text=True).strip()
-        subprocess.run(["icacls", str(root), "/inheritance:r", "/grant:r",
-                        f"{identity}:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F"],
-                       check=True, stdout=subprocess.DEVNULL)
+    # 先处理权限，再访问文件，避免旧版留下的目录权限让恢复流程提前失败。
+    if os.name == "nt":
+        secure_windows_directory(root)
     secret_file = root / "secrets.json"
     if not secret_file.exists():
         write_new(secret_file, json.dumps({
