@@ -285,6 +285,7 @@ def register(mcp) -> None:
                 "max_tokens": dehy.get("max_tokens", 1024),
                 "temperature": dehy.get("temperature", 0.1),
                 "api_format": dehy.get("api_format", "openai_compat"),
+                "codex_model": dehy.get("codex_model", ""),
                 "timeout_seconds": dehy.get("timeout_seconds", 60),
             },
             "embedding": {
@@ -394,6 +395,12 @@ def register(mcp) -> None:
                     {"error": "surfacing must be an object"}, status_code=400
                 )
             dehydration_payload = dict(body.get("dehydration") or {})
+            if "api_format" in dehydration_payload and dehydration_payload["api_format"] not in ("openai_compat", "gemini", "anthropic", "codex"):
+                return JSONResponse({"error": "unsupported dehydration format"}, status_code=400)
+            if "codex_model" in dehydration_payload:
+                value = dehydration_payload["codex_model"]
+                if not isinstance(value, str) or len(value) > 150 or any(c in value for c in ("\n", "\r", "\0")):
+                    return JSONResponse({"error": "invalid codex_model"}, status_code=400)
             if "extra_body" in dehydration_payload and not isinstance(
                 dehydration_payload["extra_body"], dict
             ):
@@ -619,6 +626,7 @@ def register(mcp) -> None:
             "temperature",
             "timeout_seconds",
             "api_format",
+            "codex_model",
             "extra_body",
             "api_key",
             "api_available",
@@ -643,7 +651,7 @@ def register(mcp) -> None:
         if "dehydration" in body:
             d = dehydration_payload
             dehy = sh.config.setdefault("dehydration", {})
-            for key in ("model", "base_url", "max_tokens", "temperature", "api_format", "timeout_seconds", "extra_body"):
+            for key in ("model", "base_url", "max_tokens", "temperature", "api_format", "codex_model", "timeout_seconds", "extra_body"):
                 if key in d:
                     dehy[key] = d[key]
                     updated.append(f"dehydration.{key}")
@@ -659,10 +667,11 @@ def register(mcp) -> None:
                 sh.dehydrator.temperature = float(configured_temperature)
             sh.dehydrator.timeout_seconds = _positive_float(dehy.get("timeout_seconds"), sh.dehydrator.timeout_seconds)
             sh.dehydrator.api_format = dehy.get("api_format", getattr(sh.dehydrator, "api_format", "openai_compat"))
+            sh.dehydrator.codex_model = dehy.get("codex_model", getattr(sh.dehydrator, "codex_model", ""))
             sh.dehydrator.extra_body = dict(dehy.get("extra_body") or {})
             if "api_key" in d and d["api_key"]:
                 sh.dehydrator.api_key = dehy["api_key"]
-            sh.dehydrator.api_available = bool(sh.dehydrator.api_key)
+            sh.dehydrator.api_available = sh.dehydrator.api_format == "codex" or bool(sh.dehydrator.api_key)
             # 密钥或 URL 改变时重建 OpenAI 兼容客户端。
             if sh.dehydrator.api_available and sh.dehydrator.api_format == "openai_compat":
                 from openai import AsyncOpenAI
@@ -772,7 +781,7 @@ def register(mcp) -> None:
                     if not isinstance(sc_dehy, dict):
                         sc_dehy = {}
                         save_config["dehydration"] = sc_dehy
-                    for key in ("model", "base_url", "max_tokens", "temperature", "api_format", "timeout_seconds", "extra_body"):
+                    for key in ("model", "base_url", "max_tokens", "temperature", "api_format", "codex_model", "timeout_seconds", "extra_body"):
                         if key in dehydration_payload:
                             sc_dehy[key] = dehydration_payload[key]
                     # Never persist api_key to yaml (use env var)
@@ -999,9 +1008,21 @@ def register(mcp) -> None:
             return err
         # Use current runtime config (api_key may have been updated in-memory)
         dehyd = sh.config.get("dehydration", {})
+        try:
+            expected = (await request.json()).get("expected_format")
+        except (ValueError, AttributeError, TypeError):
+            expected = None
+        if expected is not None and expected != dehyd.get("api_format", "openai_compat"):
+            return JSONResponse({"ok": False, "error": "所选后端尚未保存，请先保存配置再测试。"}, status_code=400)
         model = dehyd.get("model", "")
         base_url = dehyd.get("base_url", "")
         api_key = dehyd.get("api_key", "")
+        if dehyd.get("api_format") == "codex":
+            try:
+                answer = await sh.dehydrator._chat("只返回 OK，不调用任何工具。", "虚构连接测试", max_tokens=32)
+                return JSONResponse({"ok": True, "message": "Codex 订阅调用成功 ✓"}) if answer.strip() == "OK" else JSONResponse({"ok": False, "error": "Codex 已返回，但连接测试内容不符"}, status_code=400)
+            except Exception as exc:
+                return JSONResponse({"ok": False, "error": str(exc)[:300]}, status_code=400)
         if not api_key:
             return JSONResponse({"ok": False, "error": "未设置 API Key"}, status_code=400)
         try:
@@ -1105,6 +1126,8 @@ def register(mcp) -> None:
             if not base_url:
                 base_url = sh.config.get("embedding", {}).get("base_url", "")
 
+        if api_format == "codex":
+            return JSONResponse({"ok": False, "error": "Codex 模式不使用 API 模型列表；模型名留空使用 CLI 默认。"}, status_code=400)
         if not api_key:
             return JSONResponse({"ok": False, "error": "需要 api_key（请先保存 API Key 或在输入框填入）"}, status_code=400)
 
@@ -1318,7 +1341,7 @@ def register(mcp) -> None:
                 staged_format = staged_cfg.get(
                     "api_format", getattr(current_dehy, "api_format", "openai_compat")
                 )
-                staged_available = bool(staged_api_key)
+                staged_available = staged_format == "codex" or bool(staged_api_key)
                 staged_client = None
                 if staged_available and staged_format == "openai_compat":
                     from openai import AsyncOpenAI as _OAI_DH

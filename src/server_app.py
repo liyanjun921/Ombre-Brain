@@ -587,13 +587,14 @@ class RuntimeLifecycle:
 
     async def _keepalive_loop(self) -> None:
         await asyncio.sleep(max(0.0, self.keepalive_initial_delay))
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(trust_env=False) as client:
             while True:
                 try:
-                    await client.get(
+                    response = await client.get(
                         self.keepalive_url,
                         timeout=self.health_probe_timeout,
                     )
+                    response.raise_for_status()
                     self.logger.debug("Keepalive ping OK")
                 except asyncio.CancelledError:
                     raise

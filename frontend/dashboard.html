@@ -2865,6 +2865,7 @@
             <option value="gemini">Gemini（gemini-2.5-flash-lite）</option>
             <option value="siliconflow">硅基流动 SiliconFlow（DeepSeek-V3，免费额度）</option>
             <option value="anthropic">Anthropic（claude-3-5-haiku）</option>
+            <option value="codex">Codex 本机订阅（无需 API Key）</option>
             <option value="custom">自定义</option>
           </select>
         </div>
@@ -2875,6 +2876,7 @@
         <div class="config-row">
           <label>格式</label>
           <select id="cfg-dehy-format" onchange="onDehyFormatChange()">
+            <option value="codex">Codex 本机订阅</option>
             <option value="openai_compat">OpenAI 兼容（DeepSeek / Ollama / vLLM 等）</option>
             <option value="gemini">Gemini 原生</option>
             <option value="anthropic">Anthropic 原生</option>
@@ -2894,7 +2896,12 @@
           <button type="button" onclick="testDehydrationKey()" title="测试连接 / Test connection" style="margin-left:4px;padding:0 10px;height:32px;font-size:12px;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;"><i data-lucide="zap"></i> 测试</button>
           <span id="dehy-key-msg" style="margin-left:8px;font-size:11px;"></span>
         </div>
-        <div style="margin-top:-4px;margin-bottom:12px;padding-left:122px;font-size:11px;color:var(--text-light);">留空不改。Key 保存后立即生效并写入 .env（重启持久）。</div>
+        <div id="cfg-dehy-api-hint" style="margin-top:-4px;margin-bottom:12px;padding-left:122px;font-size:11px;color:var(--text-light);">留空不改。Key 保存后立即生效并写入 .env（重启持久）。</div>
+        <div id="cfg-dehy-codex-row" style="display:none;margin-bottom:12px;">
+          <div class="config-row"><label>Codex 模型</label><input id="cfg-dehy-codex-model" placeholder="留空使用 Codex 默认模型" /></div>
+          <div style="font-size:12px;line-height:1.7;">复用本机 ChatGPT 登录，受 Codex 额度限制；失败不会切换付费 API。先保存配置，再测试。<br>本机只执行独立文本整理，不使用微信线程。Max Tokens 在此模式是输出预算提示。</div>
+          <button type="button" onclick="testDehydrationKey()">测试 Codex 订阅连接</button><span id="codex-test-msg"></span>
+        </div>
         <div class="config-row"><label>Max Tokens</label><input type="number" id="cfg-dehy-maxtokens" min="128" max="8192" /></div>
         <div class="config-row"><label>Temperature</label><input type="number" id="cfg-dehy-temp" min="0" max="2" step="0.05" /></div>
       </div>
@@ -3132,6 +3139,7 @@
         <div class="form-row">
           <label>格式</label>
           <select id="env-compress-format">
+            <option value="codex">Codex 本机订阅（忽略 API Key 和 Base URL）</option>
             <option value="openai_compat">OpenAI 兼容</option>
             <option value="gemini">Gemini 原生</option>
             <option value="anthropic">Anthropic 原生</option>
@@ -4036,7 +4044,14 @@ async function toggleTunnel() {
 function onDehyFormatChange() {
   var fmt = (document.getElementById('cfg-dehy-format') || {value:'openai_compat'}).value;
   var urlRow = document.getElementById('cfg-dehy-url-row');
-  if (urlRow) urlRow.style.display = fmt === 'gemini' ? 'none' : '';
+  if (urlRow) urlRow.style.display = (fmt === 'gemini' || fmt === 'codex') ? 'none' : '';
+  var codex = fmt === 'codex';
+  var apiHint = document.getElementById('cfg-dehy-api-hint'); if (apiHint) apiHint.style.display = codex ? 'none' : '';
+  ['cfg-dehy-key', 'cfg-dehy-model', 'cfg-dehy-temp'].forEach(function(id) {
+    var input = document.getElementById(id); if (input) input.closest('.config-row').style.display = codex ? 'none' : '';
+  });
+  var row = document.getElementById('cfg-dehy-codex-row'); if (row) row.style.display = codex ? '' : 'none';
+  var notice = document.getElementById('dehy-key-notice'); if (notice && codex) notice.style.display = 'none';
 }
 
 function onEmbFormatChange() {
@@ -4131,9 +4146,9 @@ function selectRemoteModelOption(option) {
 }
 
 async function testDehydrationKey() {
-  const msgEl = document.getElementById('dehy-key-msg');
+  const msgEl = document.getElementById(document.getElementById('cfg-dehy-format').value === 'codex' ? 'codex-test-msg' : 'dehy-key-msg');
   msgEl.style.color = 'var(--text-dim)'; msgEl.textContent = '测试中… / Testing…';
-  const resp = await authFetch('/api/test/dehydration', {method: 'POST'});
+  const resp = await authFetch('/api/test/dehydration', {method: 'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({expected_format:document.getElementById('cfg-dehy-format').value})});
   if (!resp) return;
   const d = await resp.json().catch(() => ({}));
   if (d.ok) {
@@ -7651,6 +7666,7 @@ var EMBED_PRESETS = {
   gemini:      { format: 'openai_compat', base_url: 'https://generativelanguage.googleapis.com/v1beta/openai/', model: 'gemini-embedding-001' },
   siliconflow: { format: 'openai_compat', base_url: 'https://api.siliconflow.cn/v1', model: 'BAAI/bge-m3' },
   ollama:      { format: 'ollama',        base_url: '', model: 'bge-m3' },
+  codex:       { format: 'codex', base_url: '', model: '' },
   custom:      { format: 'openai_compat', base_url: '', model: '' }
 };
 var DEHY_PRESETS = {
@@ -7682,7 +7698,7 @@ function applyDehyPreset() {
   _setVal('cfg-dehy-model', p.model);
   if (typeof onDehyFormatChange === 'function') onDehyFormatChange();
   var hint = document.getElementById('dehy-preset-hint');
-  if (hint) hint.textContent = '已自动填好 Base URL + 模型名，填入对应 key 点「保存」再「测试」即可。';
+  if (hint) hint.textContent = k === 'codex' ? '使用本机 Codex 的 ChatGPT 登录；无需 Key，先保存配置再测试。' : '已自动填好 Base URL + 模型名，填入对应 key 点「保存」再「测试」即可。';
 }
 
 // 一键本地化：检测系统 → 装运行时（免提权）→ 起子进程 → 下模型 → 切本地重算
@@ -7949,7 +7965,8 @@ async function loadConfig() {
     var fmtEl = document.getElementById('cfg-dehy-format');
     if (fmtEl) { fmtEl.value = cfg.dehydration.api_format || 'openai_compat'; onDehyFormatChange(); }
     var dehyNotice = document.getElementById('dehy-key-notice');
-    if (dehyNotice) dehyNotice.style.display = cfg.dehydration.api_key_masked ? 'none' : '';
+    if (dehyNotice) dehyNotice.style.display = (cfg.dehydration.api_key_masked || cfg.dehydration.api_format === 'codex') ? 'none' : '';
+    document.getElementById('cfg-dehy-codex-model').value = cfg.dehydration.codex_model || '';
     document.getElementById('cfg-dehy-maxtokens').value = cfg.dehydration.max_tokens || 1024;
     document.getElementById('cfg-dehy-temp').value = cfg.dehydration.temperature != null
       ? cfg.dehydration.temperature : 0.1;
@@ -8300,6 +8317,7 @@ async function saveConfig(persist) {
       max_tokens: parseInt(document.getElementById('cfg-dehy-maxtokens').value) || 1024,
       temperature: Number.isFinite(dehyTemperature) ? dehyTemperature : 0.1,
       api_format: (document.getElementById('cfg-dehy-format') || {value:'openai_compat'}).value || 'openai_compat',
+      codex_model: document.getElementById('cfg-dehy-codex-model').value.trim(),
     },
     embedding: {
       enabled: document.getElementById('cfg-emb-enabled').value === 'true',

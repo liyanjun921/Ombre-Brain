@@ -46,6 +46,8 @@
 
 ## 跨端对话桥（可选）
 
+本机订阅压缩可将 `OMBRE_COMPRESS_FORMAT` 设为 `codex`（或配置 `dehydration.api_format: codex`）。它只调用已登录 ChatGPT 的官方 Codex CLI，不读取或复制登录令牌，额度不足或调用失败时不会切换付费 API。`dehydration.codex_model` 可留空使用 CLI 默认模型，与原 API 的 `model` 分开。`OMBRE_CODEX_COMMAND` 可选，指定官方 Codex 程序或 npm 的 codex.cmd 路径；默认从 PATH 和 Windows 用户 npm 目录寻找，不接受拼接命令或额外参数。`CODEX_HOME` 沿用 CLI 当前环境，仅由 CLI 自己读取认证。
+
 - `OMBRE_SHARED_CHAT_ENABLED`：设为 `true` 才注册对话 MCP 工具并开放桥接 HTTP API，默认关闭。
 - `OMBRE_SHARED_CHAT_TOKEN`：对话桥 HTTP API 的独立 Bearer 密钥，至少 32 个字符；不复用 Dashboard Cookie，不接受 URL 密钥。
 - `OMBRE_SHARED_CHAT_SCOPE`：本实例的固定共享范围，默认 `companion`；调用方不能切换范围。

@@ -4,6 +4,8 @@
 
 先用 Windows、不增加服务器月费的安装入口见 [Windows 本机安装说明](WINDOWS_SHARED_CHAT.md)。源码入口为 `deploy/Install.cmd`，配套包包含经过校验的微信增量补丁；已有定制遇冲突会停下。
 
+3.8.0 起可用本机 Codex 订阅替代压缩 API，并使用本地向量模型。已有安装无需重装，见 [订阅整理与升级说明](CODEX_SUBSCRIPTION.md)。实际账号调用、本地模型和跨端连接仍分别验收。
+
 ## 数据分工
 
 - 长期经历仍由模型通过原版 `hold`／`grow` 写入 Markdown 桶。

@@ -76,7 +76,9 @@ def initialize(root: Path) -> dict:
     vault.mkdir(exist_ok=True)
     config = vault / "config.yaml"
     if not config.exists():
-        write_new(config, "transport: streamable-http\nembedding:\n  enabled: false\n")
+        write_new(config, "transport: streamable-http\ndehydration:\n  api_format: codex\n  timeout_seconds: 180\nembedding:\n  enabled: false\n")
+        if not (root / "codex-subscription.json").exists():
+            write_new(root / "codex-subscription.json", '{"enabled":true}')
     return credentials
 
 
@@ -95,6 +97,11 @@ def server_env(root: Path, credentials: dict) -> dict:
         "OMBRE_SHARED_CHAT_ENABLED": "true", "OMBRE_SHARED_CHAT_SCOPE": "companion",
         "OMBRE_SHARED_CHAT_TOKEN": credentials["bridge_token"],
     })
+    if os.environ.get("OMBRE_CODEX_COMMAND", "").strip():
+        env["OMBRE_CODEX_COMMAND"] = os.environ["OMBRE_CODEX_COMMAND"].strip()
+    marker = root / "codex-subscription.json"
+    if marker.exists() and json.loads(marker.read_text(encoding="utf-8")).get("enabled") is True:
+        env["OMBRE_COMPRESS_FORMAT"] = "codex"
     return env
 
 
@@ -117,7 +124,8 @@ def install(root: Path) -> None:
 def local_json(root: Path, credentials: dict) -> dict:
     request = urllib.request.Request(f"http://127.0.0.1:{PORT}/api/shared-chat/status",
                                      headers={"Authorization": "Bearer " + credentials["bridge_token"]})
-    with urllib.request.urlopen(request, timeout=3) as response:  # nosec B310
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=3) as response:  # nosec B310
         return json.load(response)
 
 
@@ -437,6 +445,63 @@ def connect_gpt(root: Path, credentials: dict) -> None:
     raise RuntimeError("隧道未在 60 秒内就绪，保留新窗口查看具体错误。")
 
 
+def setup_local_embedding(root: Path, credentials: dict) -> None:
+    """调用本机原有安装接口，复用运行时与模型；不保存会话 Cookie。"""
+    import http.cookiejar
+
+    local_json(root, credentials)
+    print("首次本地化将下载 Ollama 与 bge-m3，合计约 2–3GB；运行时需额外内存。")
+    print("复用已有安装，不修改电源设置；请保持记忆库运行窗口打开。")
+    base = f"http://127.0.0.1:{PORT}"
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),
+                                        urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+
+    def call(path: str, body=None):
+        data = json.dumps(body).encode() if body is not None else None
+        request = urllib.request.Request(base + path, data=data,
+                                         headers={"Content-Type": "application/json", "Origin": base})
+        try:
+            with opener.open(request, timeout=200) as response:
+                result = json.load(response)
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"本机步骤 {path} 返回 HTTP {exc.code}，请在管理页面查看具体状态。") from exc
+        if result.get("ok") is False:
+            raise RuntimeError(str(result.get("error") or "本机配置未完成"))
+        return result
+
+    def wait(path: str, key: str, phase: str, success: str) -> None:
+        last = None
+        for _ in range(1800):
+            state = call(path).get(key) or {}
+            current = (state.get(phase), state.get("percent"))
+            if current != last:
+                print("进度：", current[0], current[1] if current[1] is not None else "")
+                last = current
+            if state.get(phase) == success:
+                return
+            if state.get(phase) in ("error", "failed", "cancelled"):
+                raise RuntimeError("本地化步骤失败，已停止，原有记忆保留；请查看管理页状态。")
+            time.sleep(2)
+        raise RuntimeError("本地化等待超时；任务可能仍在运行，请先查看状态，不要重复下载。")
+
+    call("/auth/login", {"password": credentials["dashboard_password"]})
+    env = call("/api/embedding/local/env")
+    if not env.get("installed"):
+        call("/api/embedding/local/install", {"mirror": "official"})
+        wait("/api/embedding/local/install/status", "install", "phase", "done")
+    call("/api/embedding/local/start", {})
+    status = call("/api/embedding/local/status?model=bge-m3")
+    if not status.get("has_model"):
+        call("/api/embedding/local/pull", {"model": "bge-m3", "mirror": "official"})
+        wait("/api/embedding/local/pull/status", "pull", "status", "success")
+    call("/api/embedding/migrate", {"target_backend": "ollama", "api_format": "ollama", "model": "bge-m3", "base_url": ""})
+    wait("/api/embedding/migrate/status", "status", "phase", "completed")
+    if call("/api/config").get("embedding", {}).get("api_format") not in ("ollama", "local"):
+        raise RuntimeError("尚未确认本地向量生效，已停止，不调用云端测试。")
+    call("/api/test/embedding", {})
+    print("本地向量化已通过真实请求测试。Codex 可在管理页点击测试订阅连接。")
+
+
 def backup(root: Path) -> None:
     if occupied(PORT):
         raise RuntimeError("请先在记忆库运行窗口按 Ctrl+C 停服，再备份，避免数据库副本不一致。")
@@ -460,7 +525,8 @@ def main() -> None:
     while True:
         print("\nOB 本机共享记忆 B\n1 安装依赖\n2 启动记忆库\n3 接入现有微信（兼容检查与备份）"
               "\n4 用原来的启动文件打开微信\n5 连接 ChatGPT 私有隧道"
-              "\n6 查看状态\n7 打开记忆管理页面\n8 停服后的本机备份\n0 退出安装助手")
+              "\n6 查看状态\n7 打开记忆管理页面\n8 停服后的本机备份"
+              "\n9 安装并启用本地向量（首次约 2–3GB）\n0 退出安装助手")
         choice = input("选择编号：").strip()
         try:
             if choice == "0":
@@ -485,6 +551,8 @@ def main() -> None:
                 webbrowser.open(f"http://127.0.0.1:{PORT}")
             elif choice == "8":
                 backup(root)
+            elif choice == "9":
+                setup_local_embedding(root, credentials)
             else:
                 print("请选择菜单里的编号。")
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:

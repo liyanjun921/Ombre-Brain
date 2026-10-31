@@ -307,12 +307,12 @@ class Dehydrator:
     """
     Data dehydrator + content analyzer.
     Three capabilities: dehydration / merge / auto-tagging (domain + emotion).
-    API-only: every public method requires a working LLM API.
+    通过已配置的 LLM API 或本机 Codex 订阅调用模型。
     If the API is unavailable, methods raise RuntimeError so callers can
     surface the failure to the user instead of silently producing low-quality results.
     数据脱水器 + 内容分析器。
     三大能力：脱水压缩 / 新旧合并 / 自动打标。
-    仅走 API：API 不可用时直接抛出 RuntimeError，调用方明确感知。
+    所选模型后端不可用时明确报错；Codex 模式不回退到 API。
     （根据 BEHAVIOR_SPEC.md 三、降级行为表决策：无本地降级）
     """
 
@@ -333,6 +333,9 @@ class Dehydrator:
         self.timeout_seconds = positive_float(dehy_cfg.get("timeout_seconds"), _API_TIMEOUT_SECONDS)
         # api_format: "openai_compat" (default) | "gemini" | "anthropic"
         self.api_format = dehy_cfg.get("api_format", "openai_compat")
+        self.codex_model = str(dehy_cfg.get("codex_model") or "").strip()
+        self.codex_command = os.environ.get("OMBRE_CODEX_COMMAND", "").strip()
+        self._codex_gate = asyncio.Semaphore(1)
         # Auto-detect new Google AI Studio key format (AQ.*): these keys are not accepted
         # by the OpenAI-compat endpoint (/v1beta/openai/) and must use the native
         # generateContent API. Switch automatically so users don't need to set api_format manually.
@@ -361,7 +364,7 @@ class Dehydrator:
         self.human = config.get("human", "用户") or "用户"
 
         # --- API availability / 是否有可用的 API ---
-        self.api_available = bool(self.api_key)
+        self.api_available = self.api_format == "codex" or bool(self.api_key)
 
         # --- Initialize OpenAI-compatible client (only for openai_compat format) ---
         # --- 初始化 OpenAI 兼容客户端（仅 openai_compat 格式使用）---
@@ -453,9 +456,10 @@ class Dehydrator:
         third-person 摘要仍会命中缓存返回——视角修复对存量内容不生效。把
         prompt 版本、人名、api_format、base_url 和 model 混进 key，换模型或端点后
         下次 breath 会用新配置重新脱水，不会复用旧模型的摘要。"""
+        model_identity = self.codex_model if self.api_format == "codex" else self.model
         keyed = (
             f"{_PROMPT_VERSION}|{self.human}|{self.api_format}|"
-            f"{self.base_url.rstrip('/')}|{self.model}|{content}"
+            f"{self.base_url.rstrip('/')}|{model_identity}|{content}"
         )
         return hashlib.sha256(keyed.encode()).hexdigest()
 
@@ -523,6 +527,10 @@ class Dehydrator:
 
         真正的单次调用在 _chat_once；这里只负责重试与退避，让 Gemini 免费层
         偶发的 429/503 不至于直接把脱水/合并打挂（见 README 故障表）。"""
+        if self.api_format == "codex":
+            # 订阅整理一次只运行一个任务；失败不自动重试，也不切换 API。
+            async with self._codex_gate:
+                return await self._chat_once(system, user, max_tokens=max_tokens, temperature=temperature)
         last_exc: BaseException | None = None
         for attempt in range(_RETRY_MAX_ATTEMPTS):
             try:
@@ -568,6 +576,11 @@ class Dehydrator:
             max_tokens   — 覆盖默认（如 analyze 用 256，digest 用 2048）
             temperature  — 覆盖默认（如 digest / plan_judge 需要 0.0）
         """
+        if self.api_format == "codex":
+            from ombrebrain.integrations.codex_compress import chat
+            return await chat(system, user, model=self.codex_model, command=self.codex_command,
+                              timeout=self.timeout_seconds,
+                              max_tokens=max_tokens if max_tokens is not None else self.max_tokens)
         if self.api_format == "gemini":
             return await self._chat_gemini(system, user, max_tokens=max_tokens, temperature=temperature)
         if self.api_format == "anthropic":
