@@ -966,7 +966,18 @@ async def build_system_diagnostics() -> dict[str, Any]:
     llm_key_set = _secret_is_set(dehy.get("api_key", ""), "OMBRE_COMPRESS_API_KEY")
     llm_model = str(dehy.get("model") or "").strip()
     llm_base = str(dehy.get("base_url") or "").strip()
-    if not llm_key_set:
+    if dehy.get("api_format") == "codex":
+        from ombrebrain.integrations.codex_compress import resolve_command
+        try:
+            resolve_command()
+            llm_status = "ok"
+            llm_message = "已选择本机 Codex 订阅；登录与额度请点击测试确认"
+            llm_action = "到 设置 -> 引擎 测试 Codex 连接，不需要 API Key"
+        except RuntimeError:
+            llm_status = "error"
+            llm_message = "已选择 Codex，但未找到本机官方 CLI"
+            llm_action = "检查现有 Codex 安装，或配置 OMBRE_CODEX_COMMAND"
+    elif not llm_key_set:
         llm_status = "error"
         llm_message = "压缩/打标 LLM API Key 未配置"
         llm_action = "到 设置 -> 引擎 填写压缩 API Key，或设置 OMBRE_COMPRESS_API_KEY"

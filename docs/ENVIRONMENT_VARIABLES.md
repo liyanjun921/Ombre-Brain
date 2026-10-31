@@ -44,6 +44,19 @@
 - `OMBRE_DASHBOARD_SESSION_DAYS`：Dashboard 登录会话天数。
 - `OMBRE_TRUSTED_PROXY_CIDRS`：直接连接 OB 的最后一跳可信反向代理 CIDR；不是公网客户端 IP 或域名，禁止使用 `0.0.0.0/0`。官方 Compose 模板会从 `.env` 透传该值，修改后需要重新创建容器。
 
+## 跨端对话桥（可选）
+
+本机订阅压缩可将 `OMBRE_COMPRESS_FORMAT` 设为 `codex`（或配置 `dehydration.api_format: codex`）。它只调用已登录 ChatGPT 的官方 Codex CLI，不读取或复制登录令牌，额度不足或调用失败时不会切换付费 API。`dehydration.codex_model` 可留空使用 CLI 默认模型，与原 API 的 `model` 分开。`OMBRE_CODEX_COMMAND` 可选，指定官方 Codex 程序或 npm 的 codex.cmd 路径；默认从 PATH 和 Windows 用户 npm 目录寻找，不接受拼接命令或额外参数。`CODEX_HOME` 沿用 CLI 当前环境，仅由 CLI 自己读取认证。
+
+- `OMBRE_SHARED_CHAT_ENABLED`：设为 `true` 才注册对话 MCP 工具并开放桥接 HTTP API，默认关闭。
+- `OMBRE_SHARED_CHAT_TOKEN`：对话桥 HTTP API 的独立 Bearer 密钥，至少 32 个字符；不复用 Dashboard Cookie，不接受 URL 密钥。
+- `OMBRE_SHARED_CHAT_SCOPE`：本实例的固定共享范围，默认 `companion`；调用方不能切换范围。
+- 对话库路径固定为 `<数据根目录>/_shared_chat/archive.sqlite3`，必须随数据根目录持久化；这是独立的原话档案，不替代 Markdown 记忆桶，也不修改原版不可回读的 `_sources` 证据层。
+
+Windows 本机安装助手 `deploy/windows_shared.py` 不新增 OB 变量。它以 `LOCALAPPDATA` 定位独立数据目录，固定使用 `127.0.0.1:18001`；启动子进程前移除父进程的 `OMBRE_*`，再只设置本实例明确需要的变量，避免误用其他记忆库。`CODEX_HOME` 只用于定位现有 Codex 配置。`CYBERBOSS_OB_URL`、`CYBERBOSS_OB_TOKEN`、`CYBERBOSS_OB_WORKSPACE_ROOT`、`CYBERBOSS_OB_MCP_TOKEN` 由助手注入原微信启动流程，不写入仓库文件。
+
+可选的 OpenAI 私有隧道使用其官方变量 `CONTROL_PLANE_API_KEY`、`CONTROL_PLANE_TUNNEL_ID`、`MCP_SERVER_URL`、`MCP_EXTRA_HEADERS`、`MCP_DISCOVERY_EXTRA_HEADERS`、`HEALTH_LISTEN_ADDR`。运行 Key 仅从本机不回显输入进入子进程环境，不保存在配置或命令参数；MCP 头通过 `env:OMBRE_MCP_TOKEN` 引用本机独立密钥，隧道状态端口固定为 `127.0.0.1:18002`。
+
 ## Tunnel、Hook 与 GitHub
 
 - `OMBRE_GITHUB_TOKEN`：GitHub 备份或更新访问令牌。

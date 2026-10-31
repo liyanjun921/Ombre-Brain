@@ -1,0 +1,38 @@
+# 仅为新建 B 实例准备；创建前确认工作区和每月费用，不管理现有服务。
+services:
+  - type: web
+    name: xlc-ob-memory-b-20261031
+    runtime: python
+    repo: https://github.com/liyanjun921/Ombre-Brain
+    branch: testing/ob-shared-memory-b
+    region: singapore
+    plan: 0.5c-512mb
+    autoDeployTrigger: 'off'
+    buildCommand: pip install --require-hashes -r requirements.lock.txt
+    startCommand: python deploy/start_shared_chat.py
+    healthCheckPath: /health
+    disk:
+      name: ob-shared-data
+      mountPath: /opt/render/project/src/buckets
+      sizeGB: 1
+    envVars:
+      - key: OMBRE_TRANSPORT
+        value: streamable-http
+      - key: OMBRE_BUCKETS_DIR
+        value: /opt/render/project/src/buckets
+      - key: OMBRE_CONFIG_PATH
+        value: /opt/render/project/src/buckets/config.yaml
+      - key: OMBRE_MCP_REQUIRE_AUTH
+        value: 'true'
+      - key: OMBRE_MCP_AUTH_MODE
+        value: hybrid
+      - key: OMBRE_MCP_TOKEN
+        generateValue: true
+      - key: OMBRE_DASHBOARD_PASSWORD
+        generateValue: true
+      - key: OMBRE_SHARED_CHAT_ENABLED
+        value: 'true'
+      - key: OMBRE_SHARED_CHAT_TOKEN
+        generateValue: true
+      - key: OMBRE_SHARED_CHAT_SCOPE
+        value: companion

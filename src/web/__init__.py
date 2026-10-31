@@ -33,9 +33,11 @@ from . import config_api
 from . import onboarding
 from . import them
 from . import you
+from . import shared_chat
 
 
 _WEB_MODULES = (
+    ("web.shared_chat", shared_chat.register),
     ("web.auth", auth.register),
     ("web.tunnel", tunnel.register),
     ("web.oauth", oauth.register),
