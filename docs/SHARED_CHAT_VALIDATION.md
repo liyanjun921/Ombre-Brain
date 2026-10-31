@@ -39,4 +39,15 @@
 - 此环境没有 Render CLI，因此未进行平台侧 Blueprint 校验；结构校验不代表真实云端构建已成功。
 - 尚未创建付费服务或选择 Render 工作区。已发现唯一可用工作区名为 My Workspace，但当前没有选中上下文，需用户确认目标及持续费用后再创建。
 
+## Windows 本机方案准备
+
+- 用户选择先使用 Windows 电脑，不增加托管月费；未创建 Render 服务，云端配置只保留为备选。
+- 本轮完整 OB 回归：2950 通过、99 跳过，没有失败；Ruff 与 `git diff --check` 通过。
+- 本机安装器新增 8 项测试通过：独立凭据与父进程隔离、已有配置保留、重复安装、Codex 追加与冲突不覆盖、保留定制的 LF／CRLF 增量补丁、失败回滚、停服备份边界。
+- Python 3.12／Windows x64 对应的锁定依赖已全部下载并通过 SHA-256 校验，包含 Windows 专用 pywin32、colorama 和 jieba 源码包；这不是在 Windows 上安装或运行成功的证明。ARM64 未作依赖下载验证。
+- 官方私有隧道方案已按当前 OpenAI 文档与 tunnel-client 参数参考编写；没有用户 tunnel_id、运行 Key 或目标 Windows，尚未运行用户隧道或验收 ChatGPT 插件。
+- 不改动用户 Windows、不结束未知进程、不修改原启动文件、不自动购买服务。本机管理密码与两种访问 Token 由目标电脑生成；OpenAI 隧道运行 Key 仅本机不回显输入。
+- 源码和安装说明见 `docs/WINDOWS_SHARED_CHAT.md`，安装包只使用两仓库 Git index 中的公开文件，不包含测试 vault 或用户凭据。
+- 实际包内五个微信 JS 文件的增量补丁在真实基线副本上应用成功，保留额外定制，重复应用能识别；应用结果逐文件通过 Node 语法检查，包内所有源码哈希校验通过。
+
 源码实现和配置步骤见 `docs/SHARED_CHAT.md`。folio 界面移植和事件唤醒留给后续阶段。

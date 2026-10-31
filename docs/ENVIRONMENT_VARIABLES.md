@@ -51,6 +51,10 @@
 - `OMBRE_SHARED_CHAT_SCOPE`：本实例的固定共享范围，默认 `companion`；调用方不能切换范围。
 - 对话库路径固定为 `<数据根目录>/_shared_chat/archive.sqlite3`，必须随数据根目录持久化；这是独立的原话档案，不替代 Markdown 记忆桶，也不修改原版不可回读的 `_sources` 证据层。
 
+Windows 本机安装助手 `deploy/windows_shared.py` 不新增 OB 变量。它以 `LOCALAPPDATA` 定位独立数据目录，固定使用 `127.0.0.1:18001`；启动子进程前移除父进程的 `OMBRE_*`，再只设置本实例明确需要的变量，避免误用其他记忆库。`CODEX_HOME` 只用于定位现有 Codex 配置。`CYBERBOSS_OB_URL`、`CYBERBOSS_OB_TOKEN`、`CYBERBOSS_OB_WORKSPACE_ROOT`、`CYBERBOSS_OB_MCP_TOKEN` 由助手注入原微信启动流程，不写入仓库文件。
+
+可选的 OpenAI 私有隧道使用其官方变量 `CONTROL_PLANE_API_KEY`、`CONTROL_PLANE_TUNNEL_ID`、`MCP_SERVER_URL`、`MCP_EXTRA_HEADERS`、`MCP_DISCOVERY_EXTRA_HEADERS`、`HEALTH_LISTEN_ADDR`。运行 Key 仅从本机不回显输入进入子进程环境，不保存在配置或命令参数；MCP 头通过 `env:OMBRE_MCP_TOKEN` 引用本机独立密钥，隧道状态端口固定为 `127.0.0.1:18002`。
+
 ## Tunnel、Hook 与 GitHub
 
 - `OMBRE_GITHUB_TOKEN`：GitHub 备份或更新访问令牌。

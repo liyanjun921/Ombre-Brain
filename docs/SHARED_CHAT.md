@@ -2,6 +2,8 @@
 
 本功能在原版 OB 上增加独立的对话档案与接入接口。没有引入 Serein，也没有改动 OB 的遗忘曲线、情感评分、记忆桶、dream、hold 或 grow。folio 的界面移植留在后续阶段。
 
+先用 Windows、不增加服务器月费的安装入口见 [Windows 本机安装说明](WINDOWS_SHARED_CHAT.md)。源码入口为 `deploy/Install.cmd`，配套包包含经过校验的微信增量补丁；已有定制遇冲突会停下。
+
 ## 数据分工
 
 - 长期经历仍由模型通过原版 `hold`／`grow` 写入 Markdown 桶。
